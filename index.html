@@ -3,15 +3,688 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Personal Money Tracker</title>
+    <title>Money Tracker with Local Storage</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
-    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <script src="https://unpkg.com/lucide-react@0.263.1/dist/index.umd.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background-color: #f3f4f6;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        .card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            padding: 24px;
+            margin-bottom: 24px;
+        }
+        .gradient-purple {
+            background: linear-gradient(135deg, #8B5CF6 0%, #EC4899 100%);
+        }
+        .gradient-green {
+            background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+        }
+        .gradient-blue {
+            background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%);
+        }
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        .btn-primary {
+            background-color: #4F46E5;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #4338CA;
+        }
+        .btn-success {
+            background-color: #10B981;
+            color: white;
+        }
+        .btn-success:hover {
+            background-color: #059669;
+        }
+        .btn-danger {
+            background-color: #EF4444;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #DC2626;
+        }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal {
+            background: white;
+            border-radius: 12px;
+            padding: 24px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+        }
+        .transaction-item {
+            border-bottom: 1px solid #E5E7EB;
+            padding: 16px 0;
+        }
+        .transaction-item:last-child {
+            border-bottom: none;
+        }
+    </style>
 </head>
 <body>
     <div id="root"></div>
-    <script type="text/babel" src="app.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const LucideReact = lucideReact;
+
+        const MoneyTracker = () => {
+            // Load initial state from localStorage or use defaults
+            const [physicalMoney, setPhysicalMoney] = useState(() => {
+                const saved = localStorage.getItem('physicalMoney');
+                return saved ? parseFloat(saved) : 0;
+            });
+            
+            const [gpayBalance, setGpayBalance] = useState(() => {
+                const saved = localStorage.getItem('gpayBalance');
+                return saved ? parseFloat(saved) : 0;
+            });
+            
+            const [transactions, setTransactions] = useState(() => {
+                const saved = localStorage.getItem('transactions');
+                return saved ? JSON.parse(saved) : [];
+            });
+            
+            const [showAddTransaction, setShowAddTransaction] = useState(false);
+            const [showAddMoneyModal, setShowAddMoneyModal] = useState(false);
+            const [moneyToAdd, setMoneyToAdd] = useState('');
+            const [selectedWallet, setSelectedWallet] = useState('');
+            
+            // Form states
+            const [amount, setAmount] = useState('');
+            const [category, setCategory] = useState('food');
+            const [paymentMethod, setPaymentMethod] = useState('physical');
+            const [description, setDescription] = useState('');
+            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+            // Save to localStorage whenever state changes
+            useEffect(() => {
+                localStorage.setItem('physicalMoney', physicalMoney.toString());
+            }, [physicalMoney]);
+
+            useEffect(() => {
+                localStorage.setItem('gpayBalance', gpayBalance.toString());
+            }, [gpayBalance]);
+
+            useEffect(() => {
+                localStorage.setItem('transactions', JSON.stringify(transactions));
+            }, [transactions]);
+
+            const categories = [
+                { value: 'food', label: 'Food', color: 'bg-red-100 text-red-800' },
+                { value: 'travel', label: 'Travel', color: 'bg-blue-100 text-blue-800' },
+                { value: 'snacks', label: 'Snacks', color: 'bg-yellow-100 text-yellow-800' },
+                { value: 'necessary', label: 'Necessary', color: 'bg-green-100 text-green-800' },
+                { value: 'miscellaneous', label: 'Miscellaneous', color: 'bg-purple-100 text-purple-800' }
+            ];
+
+            const addTransaction = () => {
+                if (!amount || !description) return;
+
+                // Calculate balances before spending
+                const beforePhysical = physicalMoney;
+                const beforeGpay = gpayBalance;
+                const beforeTotal = physicalMoney + gpayBalance;
+
+                const newTransaction = {
+                    id: Date.now(),
+                    amount: parseFloat(amount),
+                    category,
+                    paymentMethod,
+                    description,
+                    date: new Date(date),
+                    timestamp: new Date(),
+                    balancesBefore: {
+                        physical: beforePhysical,
+                        gpay: beforeGpay,
+                        total: beforeTotal
+                    }
+                };
+
+                // Update balances
+                let afterPhysical = physicalMoney;
+                let afterGpay = gpayBalance;
+                
+                if (paymentMethod === 'physical') {
+                    afterPhysical = physicalMoney - parseFloat(amount);
+                    setPhysicalMoney(afterPhysical);
+                } else {
+                    afterGpay = gpayBalance - parseFloat(amount);
+                    setGpayBalance(afterGpay);
+                }
+
+                // Add balances after spending to transaction
+                newTransaction.balancesAfter = {
+                    physical: afterPhysical,
+                    gpay: afterGpay,
+                    total: afterPhysical + afterGpay
+                };
+
+                setTransactions([...transactions, newTransaction]);
+
+                // Reset form
+                setAmount('');
+                setDescription('');
+                setShowAddTransaction(false);
+            };
+
+            const openAddMoneyModal = (type) => {
+                setSelectedWallet(type);
+                setMoneyToAdd('');
+                setShowAddMoneyModal(true);
+            };
+
+            const handleAddMoney = () => {
+                const amountToAdd = parseFloat(moneyToAdd);
+                if (amountToAdd && amountToAdd > 0) {
+                    if (selectedWallet === 'physical') {
+                        setPhysicalMoney(prev => prev + amountToAdd);
+                    } else {
+                        setGpayBalance(prev => prev + amountToAdd);
+                    }
+                    setShowAddMoneyModal(false);
+                    setMoneyToAdd('');
+                }
+            };
+
+            const getDateRange = (period) => {
+                const today = new Date();
+                const startDate = new Date();
+                
+                if (period === 'today') {
+                    startDate.setHours(0, 0, 0, 0);
+                    today.setHours(23, 59, 59, 999);
+                } else if (period === 'week') {
+                    startDate.setDate(today.getDate() - 7);
+                } else if (period === 'month') {
+                    startDate.setMonth(today.getMonth() - 1);
+                }
+                
+                return { startDate, endDate: today };
+            };
+
+            const getFilteredTransactions = (period) => {
+                const { startDate, endDate } = getDateRange(period);
+                return transactions.filter(t => t.date >= startDate && t.date <= endDate);
+            };
+
+            const getSpendingByCategory = (period) => {
+                const filtered = getFilteredTransactions(period);
+                const spending = {};
+                
+                categories.forEach(cat => {
+                    spending[cat.value] = {
+                        physical: 0,
+                        gpay: 0,
+                        total: 0
+                    };
+                });
+
+                filtered.forEach(t => {
+                    spending[t.category][t.paymentMethod] += t.amount;
+                    spending[t.category].total += t.amount;
+                });
+
+                return spending;
+            };
+
+            const getTotalSpent = (period) => {
+                const filtered = getFilteredTransactions(period);
+                return filtered.reduce((total, t) => total + t.amount, 0);
+            };
+
+            const generatePDF = () => {
+                const weeklyTransactions = getFilteredTransactions('week');
+                const monthlyTransactions = getFilteredTransactions('month');
+                
+                const formatTransactionList = (transactions, title) => {
+                    if (transactions.length === 0) return `${title}:\nNo transactions recorded.\n`;
+                    
+                    return `${title}:
+${transactions.map((t, index) => {
+  const categoryInfo = categories.find(c => c.value === t.category);
+  const beforeAfterInfo = t.balancesBefore && t.balancesAfter ? `
+   BEFORE SPENDING:
+   - Physical: ₹${t.balancesBefore.physical.toFixed(2)}
+   - GPay: ₹${t.balancesBefore.gpay.toFixed(2)}
+   - Total: ₹${t.balancesBefore.total.toFixed(2)}
+   
+   AFTER SPENDING:
+   - Physical: ₹${t.balancesAfter.physical.toFixed(2)}
+   - GPay: ₹${t.balancesAfter.gpay.toFixed(2)}
+   - Total: ₹${t.balancesAfter.total.toFixed(2)}` : '';
+  
+  return `${index + 1}. Date: ${t.date.toLocaleDateString()}
+   Time: ${t.timestamp.toLocaleTimeString()}
+   Category: ${categoryInfo?.label}
+   Amount: ₹${t.amount.toFixed(2)}
+   Payment Method: ${t.paymentMethod === 'physical' ? 'Physical Money' : 'GPay'}
+   Description: ${t.description}${beforeAfterInfo}`;
+}).join('\n\n')}
+
+`;
+                };
+
+                const doc = `PERSONAL MONEY TRACKER REPORT
+Generated on: ${new Date().toLocaleDateString()} at ${new Date().toLocaleTimeString()}
+
+═══════════════════════════════════════════════════════
+
+CURRENT BALANCES:
+Physical Money in Hand: ₹${physicalMoney.toFixed(2)}
+GPay Balance: ₹${gpayBalance.toFixed(2)}
+Total Available Balance: ₹${(physicalMoney + gpayBalance).toFixed(2)}
+
+═══════════════════════════════════════════════════════
+
+SPENDING OVERVIEW:
+Today's Total Spent: ₹${getTotalSpent('today').toFixed(2)}
+This Week's Total Spent: ₹${getTotalSpent('week').toFixed(2)}
+This Month's Total Spent: ₹${getTotalSpent('month').toFixed(2)}
+
+Remaining Balance After Monthly Expenses: ₹${((physicalMoney + gpayBalance) + getTotalSpent('month')).toFixed(2)}
+
+═══════════════════════════════════════════════════════
+
+${formatTransactionList(weeklyTransactions, 'WEEKLY TRANSACTIONS (Last 7 Days)')}
+═══════════════════════════════════════════════════════
+
+${formatTransactionList(monthlyTransactions, 'MONTHLY TRANSACTIONS (Last 30 Days)')}
+═══════════════════════════════════════════════════════
+
+CATEGORY BREAKDOWN (This Month):
+${categories.map(cat => {
+  const spending = getSpendingByCategory('month')[cat.value];
+  return `${cat.label}: ₹${spending.total.toFixed(2)}
+   - Physical Money: ₹${spending.physical.toFixed(2)}
+   - GPay: ₹${spending.gpay.toFixed(2)}`;
+}).join('\n\n')}
+
+═══════════════════════════════════════════════════════
+
+SUMMARY:
+Total Transactions This Month: ${monthlyTransactions.length}
+Total Amount Spent This Month: ₹${getTotalSpent('month').toFixed(2)}
+Average Daily Spending: ₹${(getTotalSpent('month') / 30).toFixed(2)}
+
+Report End
+═══════════════════════════════════════════════════════
+`;
+
+                const blob = new Blob([doc], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `money-tracker-report-${new Date().toISOString().split('T')[0]}.txt`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            };
+
+            const SpendingReport = ({ period, title }) => {
+                const spending = getSpendingByCategory(period);
+                const total = getTotalSpent(period);
+
+                return (
+                    <div className="card">
+                        <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                            <LucideReact.BarChart3 className="w-5 h-5" />
+                            {title}
+                        </h3>
+                        <div className="grid gap-4">
+                            {categories.map(cat => {
+                                const catSpending = spending[cat.value];
+                                return (
+                                    <div key={cat.value} className="border rounded-lg p-4">
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className={`px-3 py-1 rounded-full text-sm font-medium ${cat.color}`}>
+                                                {cat.label}
+                                            </span>
+                                            <span className="font-bold text-lg">₹{catSpending.total.toFixed(2)}</span>
+                                        </div>
+                                        <div className="flex justify-between text-sm text-gray-600">
+                                            <span>Physical: ₹{catSpending.physical.toFixed(2)}</span>
+                                            <span>GPay: ₹{catSpending.gpay.toFixed(2)}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            <div className="border-t-2 pt-4 mt-4">
+                                <div className="flex justify-between items-center font-bold text-lg">
+                                    <span>Total Spent:</span>
+                                    <span className="text-red-600">₹{total.toFixed(2)}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                );
+            };
+
+            // Clear all data function
+            const clearAllData = () => {
+                if (window.confirm("Are you sure you want to clear all data? This cannot be undone.")) {
+                    localStorage.removeItem('physicalMoney');
+                    localStorage.removeItem('gpayBalance');
+                    localStorage.removeItem('transactions');
+                    
+                    setPhysicalMoney(0);
+                    setGpayBalance(0);
+                    setTransactions([]);
+                }
+            };
+
+            return (
+                <div className="container">
+                    <div className="flex justify-between items-center mb-4">
+                        <h1 className="text-3xl font-bold text-gray-800">
+                            Personal Money Tracker
+                        </h1>
+                        <button
+                            onClick={clearAllData}
+                            className="btn btn-danger"
+                        >
+                            Clear Data
+                        </button>
+                    </div>
+
+                    {/* Total Balance Card */}
+                    <div className="card gradient-purple text-white mb-6">
+                        <div className="text-center">
+                            <h2 className="text-xl font-semibold mb-2">Total Money Balance</h2>
+                            <p className="text-4xl font-bold">₹{(physicalMoney + gpayBalance).toFixed(2)}</p>
+                            <p className="text-purple-100 mt-2">Physical: ₹{physicalMoney.toFixed(2)} | GPay: ₹{gpayBalance.toFixed(2)}</p>
+                        </div>
+                    </div>
+
+                    {/* Download Report Button */}
+                    <div className="text-center mb-6">
+                        <button
+                            onClick={generatePDF}
+                            className="btn btn-success"
+                        >
+                            <LucideReact.Download className="w-5 h-5 mr-2" />
+                            Download Report
+                        </button>
+                    </div>
+
+                    {/* Balance Cards */}
+                    <div className="grid md:grid-cols-2 gap-6 mb-8">
+                        <div className="card gradient-green text-white">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl font-semibold">Physical Money</h2>
+                                <LucideReact.Wallet className="w-8 h-8" />
+                            </div>
+                            <p className="text-3xl font-bold mb-4">₹{physicalMoney.toFixed(2)}</p>
+                            <button
+                                onClick={() => openAddMoneyModal('physical')}
+                                className="btn"
+                                style={{background: 'white', color: '#10B981'}}
+                            >
+                                Add Money
+                            </button>
+                        </div>
+
+                        <div className="card gradient-blue text-white">
+                            <div className="flex items-center justify-between mb-4">
+                                <h2 className="text-xl font-semibold">GPay Balance</h2>
+                                <LucideReact.Smartphone className="w-8 h-8" />
+                            </div>
+                            <p className="text-3xl font-bold mb-4">₹{gpayBalance.toFixed(2)}</p>
+                            <button
+                                onClick={() => openAddMoneyModal('gpay')}
+                                className="btn"
+                                style={{background: 'white', color: '#3B82F6'}}
+                            >
+                                Add Money
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* Add Money Modal */}
+                    {showAddMoneyModal && (
+                        <div className="modal-overlay">
+                            <div className="modal">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="text-xl font-bold">
+                                        Add Money to {selectedWallet === 'physical' ? 'Physical Wallet' : 'GPay'}
+                                    </h3>
+                                    <button
+                                        onClick={() => setShowAddMoneyModal(false)}
+                                        className="text-gray-500 hover:text-gray-700"
+                                    >
+                                        <LucideReact.X className="w-6 h-6" />
+                                    </button>
+                                </div>
+                                <div className="mb-4">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                                        Amount to Add (₹)
+                                    </label>
+                                    <input
+                                        type="number"
+                                        value={moneyToAdd}
+                                        onChange={(e) => setMoneyToAdd(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Enter amount"
+                                        min="0"
+                                        step="0.01"
+                                    />
+                                </div>
+                                <div className="flex gap-3 justify-end">
+                                    <button
+                                        onClick={() => setShowAddMoneyModal(false)}
+                                        className="btn btn-danger"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleAddMoney}
+                                        className="btn btn-primary"
+                                        disabled={!moneyToAdd || parseFloat(moneyToAdd) <= 0}
+                                    >
+                                        Add Money
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Add Transaction Button */}
+                    <div className="text-center mb-8">
+                        <button
+                            onClick={() => setShowAddTransaction(true)}
+                            className="btn btn-primary"
+                        >
+                            <LucideReact.PlusCircle className="w-5 h-5 mr-2" />
+                            Add Expense
+                        </button>
+                    </div>
+
+                    {/* Add Transaction Form */}
+                    {showAddTransaction && (
+                        <div className="card mb-8">
+                            <h3 className="text-xl font-bold mb-4">Add New Expense</h3>
+                            <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Amount</label>
+                                    <input
+                                        type="number"
+                                        value={amount}
+                                        onChange={(e) => setAmount(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="Enter amount"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+                                    <select
+                                        value={category}
+                                        onChange={(e) => setCategory(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        {categories.map(cat => (
+                                            <option key={cat.value} value={cat.value}>{cat.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Payment Method</label>
+                                    <select
+                                        value={paymentMethod}
+                                        onChange={(e) => setPaymentMethod(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    >
+                                        <option value="physical">Physical Money</option>
+                                        <option value='gpay'>GPay</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+                                    <input
+                                        type="date"
+                                        value={date}
+                                        onChange={(e) => setDate(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                    />
+                                </div>
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+                                    <input
+                                        type="text"
+                                        value={description}
+                                        onChange={(e) => setDescription(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                                        placeholder="What did you spend on?"
+                                    />
+                                </div>
+                            </div>
+                            <div className="flex gap-3 mt-4">
+                                <button
+                                    onClick={addTransaction}
+                                    className="btn btn-primary"
+                                >
+                                    Add Expense
+                                </button>
+                                <button
+                                    onClick={() => setShowAddTransaction(false)}
+                                    className="btn btn-danger"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Spending Reports */}
+                    <SpendingReport period="today" title="Today's Spending" />
+                    <SpendingReport period="week" title="This Week's Spending" />
+                    <SpendingReport period="month" title="This Month's Spending" />
+
+                    {/* Recent Transactions */}
+                    {transactions.length > 0 && (
+                        <div className="card">
+                            <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                <LucideReact.TrendingDown className="w-5 h-5" />
+                                Recent Transactions
+                            </h3>
+                            <div className="space-y-3">
+                                {transactions.slice(-10).reverse().map(transaction => {
+                                    const categoryInfo = categories.find(c => c.value === transaction.category);
+                                    return (
+                                        <div key={transaction.id} className="transaction-item">
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div className="flex items-center gap-3">
+                                                    <span className={`px-2 py-1 rounded text-xs font-medium ${categoryInfo?.color}`}>
+                                                        {categoryInfo?.label}
+                                                    </span>
+                                                    <span className="text-gray-600">{transaction.description}</span>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="font-bold text-red-600">-₹{transaction.amount.toFixed(2)}</div>
+                                                    <div className="text-xs text-gray-500 flex items-center gap-1 flex-wrap">
+                                                        {transaction.paymentMethod === 'physical' ? <LucideReact.Wallet className="w-3 h-3" /> : <LucideReact.Smartphone className="w-3 h-3" />}
+                                                        <span>{transaction.date.toLocaleDateString()}</span>
+                                                        <span>•</span>
+                                                        <span>{transaction.timestamp.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Before and After Balances */}
+                                            {transaction.balancesBefore && transaction.balancesAfter && (
+                                                <div className="bg-gray-50 rounded-lg p-3 mt-3">
+                                                    <div className="grid grid-cols-2 gap-4 text-sm">
+                                                        <div>
+                                                            <h5 className="font-semibold text-gray-700 mb-2">Before Spending:</h5>
+                                                            <div className="space-y-1">
+                                                                <div>Physical: ₹{transaction.balancesBefore.physical.toFixed(2)}</div>
+                                                                <div>GPay: ₹{transaction.balancesBefore.gpay.toFixed(2)}</div>
+                                                                <div className="font-medium border-t pt-1">Total: ₹{transaction.balancesBefore.total.toFixed(2)}</div>
+                                                            </div>
+                                                        </div>
+                                                        <div>
+                                                            <h5 className="font-semibold text-gray-700 mb-2">After Spending:</h5>
+                                                            <div className="space-y-1">
+                                                                <div>Physical: ₹{transaction.balancesAfter.physical.toFixed(2)}</div>
+                                                                <div>GPay: ₹{transaction.balancesAfter.gpay.toFixed(2)}</div>
+                                                                <div className="font-medium border-t pt-1">Total: ₹{transaction.balancesAfter.total.toFixed(2)}</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const App = () => {
+            return <MoneyTracker />;
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
 </body>
 </html>
